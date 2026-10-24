@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frist – study deadline tracker</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap">
+<style>
+:root{--bg:#eef2f7;--card:#fff;--ink:#14213d;--mute:#5b6b85;--line:#d5dce8;--accent:#2b59ff;--hot:#e5383b;--warn:#f2a900;--ok:#2a9d68}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1626;--card:#16213a;--ink:#e8edf7;--mute:#93a3c0;--line:#27345a;--accent:#7a9bff;--hot:#ff6b6e;--warn:#ffc233;--ok:#4cc78e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,sans-serif;line-height:1.5}
+main{max-width:760px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:2rem;margin:0;font-weight:800;letter-spacing:-.02em}
+.sub{color:var(--mute);margin:0 0 24px}
+.next{background:var(--ink);color:var(--bg);border-radius:16px;padding:24px;margin-bottom:20px}
+.next small{opacity:.7}
+.next .big{font-size:clamp(2.2rem,9vw,3.6rem);font-weight:800;letter-spacing:-.03em;line-height:1.05;margin:4px 0}
+.next .t{font-size:1.1rem}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:6px 0 20px}
+.bar i{display:block;height:100%;background:var(--ok);width:0;transition:width .3s}
+form{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px}
+form .full{grid-column:1/-1}
+label{display:flex;flex-direction:column;font-size:.85rem;color:var(--mute);gap:4px}
+input,select,button{font:inherit;color:var(--ink)}
+input,select{padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+button{cursor:pointer}
+.primary{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:600}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:5px 12px;font-size:.9rem}
+.chip[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.sp{flex:1}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+li{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-left:6px solid var(--ok);border-radius:10px;padding:12px}
+li.soon{border-left-color:var(--warn)}li.urgent,li.late{border-left-color:var(--hot)}li.done{opacity:.55;border-left-color:var(--line)}
+li.done .title{text-decoration:line-through}
+.title{font-weight:600}.meta{font-size:.85rem;color:var(--mute)}
+.left{font-weight:600;text-align:right;white-space:nowrap}
+li.late .left,li.urgent .left{color:var(--hot)}
+.del{border:0;background:none;color:var(--mute);font-size:1.1rem;padding:4px 8px}
+input[type=checkbox]{width:20px;height:20px}
+.empty{text-align:center;color:var(--mute);padding:32px;border:2px dashed var(--line);border-radius:12px}
+.err{color:var(--hot);font-size:.85rem;grid-column:1/-1;min-height:1em}
+@media(max-width:520px){form{grid-template-columns:1fr}li{grid-template-columns:auto 1fr}.left{grid-column:2;text-align:left}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<h1>Frist</h1>
+<p class="sub">Track assignment deadlines. Never miss a submission.</p>
+
+<section class="next" aria-live="polite" id="next"></section>
+
+<div class="meta" id="progLabel"></div>
+<div class="bar"><i id="prog"></i></div>
+
+<form id="f">
+<label class="full">Task<input id="title" required maxlength="80" placeholder="e.g. Submit Mandatory Assignment 3"></label>
+<label>Course<input id="course" required maxlength="30" placeholder="e.g. DAVE3625" list="courses"></label>
+<datalist id="courses"></datalist>
+<label>Due<input id="due" type="datetime-local" required></label>
+<label>Priority<select id="prio"><option value="1">Normal</option><option value="2">High</option></select></label>
+<div style="display:flex;align-items:end"><button class="primary" type="submit">Add deadline</button></div>
+<div class="err" id="err" role="alert"></div>
+</form>
+
+<div class="tools" id="tools"></div>
+<ul id="list"></ul>
+<div class="tools" style="margin-top:20px">
+<button class="chip" id="exp" type="button">Export JSON</button>
+<button class="chip" id="imp" type="button">Import JSON</button>
+<input id="file" type="file" accept=".json" hidden>
+<button class="chip" id="clr" type="button">Clear finished</button>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let tasks=[],filter="Active",course="All";
+try{tasks=JSON.parse(localStorage.getItem("frist")||"[]")}catch(e){tasks=[]}
+const save=()=>{try{localStorage.setItem("frist",JSON.stringify(tasks))}catch(e){}};
+const esc=s=>s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function left(ms){
+  const late=ms<0,a=Math.abs(ms),d=Math.floor(a/864e5),h=Math.floor(a%864e5/36e5),m=Math.floor(a%36e5/6e4);
+  const s=d>0?`${d}d ${h}h`:h>0?`${h}h ${m}m`:`${m}m`;
+  return late?`${s} overdue`:`${s} left`;
+}
+function state(t){
+  if(t.done)return"done";
+  const ms=new Date(t.due)-Date.now();
+  return ms<0?"late":ms<864e5?"urgent":ms<3*864e5?"soon":"ok";
+}
+const fmt=iso=>new Date(iso).toLocaleString("en-GB",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+
+function render(){
+  const sorted=[...tasks].sort((a,b)=>new Date(a.due)-new Date(b.due)||b.prio-a.prio);
+  // next deadline
+  const nxt=sorted.find(t=>!t.done);
+  $("next").innerHTML=nxt
+    ?`<small>Next deadline</small><div class="big">${left(new Date(nxt.due)-Date.now())}</div><div class="t">${esc(nxt.title)} · ${esc(nxt.course)} · ${fmt(nxt.due)}</div>`
+    :`<small>Next deadline</small><div class="big">All clear</div><div class="t">No open deadlines. Add one below.</div>`;
+  // progress
+  const done=tasks.filter(t=>t.done).length;
+  $("progLabel").textContent=tasks.length?`${done} of ${tasks.length} done`:"No tasks yet";
+  $("prog").style.width=tasks.length?done/tasks.length*100+"%":"0";
+  // courses
+  const cs=[...new Set(tasks.map(t=>t.course))].sort();
+  if(course!=="All"&&!cs.includes(course))course="All";
+  $("courses").innerHTML=cs.map(c=>`<option value="${esc(c)}">`).join("");
+  const chips=[["Active"],["Done"],["All"]].map(([f])=>`<button class="chip" data-f="${f}" aria-pressed="${filter===f}">${f}</button>`).join("")
+    +`<span class="sp"></span><label style="flex-direction:row;align-items:center">Course&nbsp;<select id="cf"><option>All</option>${cs.map(c=>`<option ${c===course?"selected":""} value="${esc(c)}">${esc(c)}</option>`).join("")}</select></label>`;
+  $("tools").innerHTML=chips;
+  $("cf").onchange=e=>{course=e.target.value;render()};
+  document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
+  // list
+  const shown=sorted.filter(t=>(filter==="All"||(filter==="Done")===t.done)&&(course==="All"||t.course===course));
+  $("list").innerHTML=shown.length?shown.map(t=>`<li class="${state(t)}">
+    <input type="checkbox" ${t.done?"checked":""} data-id="${t.id}" aria-label="Mark ${esc(t.title)} as done">
+    <div><div class="title">${t.prio==2?"★ ":""}${esc(t.title)}</div><div class="meta">${esc(t.course)} · ${fmt(t.due)}</div></div>
+    <div class="left">${t.done?"Done":left(new Date(t.due)-Date.now())}<button class="del" data-del="${t.id}" aria-label="Delete ${esc(t.title)}">✕</button></div></li>`).join("")
+    :`<div class="empty">Nothing here. Add a deadline above.</div>`;
+  document.querySelectorAll("[data-id]").forEach(c=>c.onchange=()=>{const t=tasks.find(x=>x.id==c.dataset.id);t.done=c.checked;save();render()});
+  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{tasks=tasks.filter(x=>x.id!=b.dataset.del);save();render()});
+}
+
+$("f").onsubmit=e=>{
+  e.preventDefault();
+  const title=$("title").value.trim(),c=$("course").value.trim().toUpperCase(),due=$("due").value;
+  if(!title||!c||!due){$("err").textContent="Fill in task, course and due date.";return}
+  tasks.push({id:Date.now(),title,course:c,due,prio:+$("prio").value,done:false});
+  save();$("err").textContent="";$("title").value="";$("title").focus();render();
+};
+$("exp").onclick=()=>{
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(tasks,null,2)],{type:"application/json"}));
+  a.download="frist-backup.json";a.click();
+};
+$("imp").onclick=()=>$("file").click();
+$("file").onchange=e=>{
+  const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);
+    if(!Array.isArray(d)||!d.every(t=>t.title&&t.course&&t.due))throw 0;
+    tasks=d.map(t=>({id:t.id||Date.now()+Math.random(),title:String(t.title),course:String(t.course),due:t.due,prio:+t.prio||1,done:!!t.done}));
+    save();render();$("err").textContent="";
+  }catch(x){$("err").textContent="Import failed. Use a file exported from Frist."}};
+  r.readAsText(e.target.files[0]);e.target.value="";
+};
+$("clr").onclick=()=>{tasks=tasks.filter(t=>!t.done);save();render()};
+// default due = tomorrow 12:00
+const d=new Date(Date.now()+864e5);d.setHours(12,0,0,0);
+$("due").value=new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,16);
+render();setInterval(render,30000);
+</script>
+</body>
+</html>
